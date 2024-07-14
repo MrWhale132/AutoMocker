@@ -1,77 +1,120 @@
 ﻿using Moq;
+using Newtonsoft.Json;
 using System.Reflection;
 
 namespace UnitTests
 {
 	internal class Base<T> where T : class
 	{
-		static Dictionary<Type, FieldInfo> _mocks;
+		static Dictionary<Type, FieldInfo> _mockFields;
+		static Dictionary<Type, FieldInfo> _classDependencies;
+		static Dictionary<Type, (object instance, int argPosition)> _originalClassInstances;
+
+		ConstructorInfo _ctor;
+		object[] _arguments;
 
 		protected T _system;
 
 
 		public Base()
 		{
-			_mocks = new Dictionary<Type, FieldInfo>();
+			if (_mockFields is not null) return;
 
-			var mocksFields = GetType().GetFields(BindingFlags.Instance | BindingFlags.NonPublic)
-									  .Where(x => x.FieldType.IsGenericType && x.FieldType.GetGenericTypeDefinition() == typeof(Mock<>));
+			_mockFields = new Dictionary<Type, FieldInfo>();
+			_classDependencies = new Dictionary<Type, FieldInfo>();
+			_originalClassInstances = new Dictionary<Type, (object instance, int argPosition)>();
 
-			_mocks = mocksFields.ToDictionary(x => x.FieldType.GenericTypeArguments[0], x => x);
+
+			var fields = GetType().GetFields(BindingFlags.Instance | BindingFlags.NonPublic);
+
+			foreach (var field in fields)
+			{
+				bool isMock = field.FieldType.IsGenericType && field.FieldType.GetGenericTypeDefinition() == typeof(Mock<>);
+
+				if (isMock)
+					_mockFields.Add(field.FieldType.GenericTypeArguments[0], field);
+				else
+					_classDependencies.Add(field.FieldType, field);
+			}
+
+
+			var type = typeof(T);
+			_ctor = type.GetConstructors().FirstOrDefault();
+
+			if (_ctor is null)
+			{
+				//public parameterless
+				_ctor = type.GetConstructor(Type.EmptyTypes)!;
+			}
+
+			var params_ = _ctor.GetParameters();
+
+			var arguments = new List<object>();
+
+			for (int i = 0; i < params_.Length; i++)
+			{
+				var param = params_[i];
+
+				if (param.ParameterType.IsInterface)
+				{
+					var mockType = typeof(Mock<>).MakeGenericType(param.ParameterType);
+					var mockCtor = mockType.GetConstructor([typeof(MockBehavior)])!;
+
+					var mock = mockCtor.Invoke([MockBehavior.Strict]);
+
+					// both Mock<> and Mock has an Object prop
+					var obj = mockType.GetProperties().Single(prop => prop.Name == "Object" && prop.DeclaringType == mockType).GetGetMethod()!.Invoke(mock, null)!;
+
+					arguments.Add(obj);
+
+					_mockFields[param.ParameterType].SetValue(this, mock);
+				}
+				else if (param.ParameterType.IsClass)
+				{
+					//TODO: bonyodalmak, ha nem egy sima config osztály hanem ennek is vannak dependái, akkor rekurzív genyó kell
+					var ctor = param.ParameterType.GetConstructor(Type.EmptyTypes)!;
+
+					var obj = ctor.Invoke(null);
+
+					arguments.Add(obj);
+					
+					_classDependencies[param.ParameterType].SetValue(this, obj);
+
+					_originalClassInstances.Add(param.ParameterType, (obj, i));
+				}
+			}
+
+			_arguments = arguments.ToArray();
 		}
-
 
 
 		[SetUp]
 		public virtual void BaseSetUp()
 		{
-            Console.WriteLine("setup");
-            _system = Mock();
-		}
-
-		[TearDown]
-		public virtual void TearDown()
-		{
-			
-		}
-
-
-		public T Mock()
-		{
-			var type = typeof(T);
-			var ctor = type.GetConstructors().FirstOrDefault();
-
-			if (ctor is null)
+			foreach (var mock in _mockFields.Values)
 			{
-				ctor = type.GetConstructor(Type.EmptyTypes);
+				MockExtensions.Reset((mock.GetValue(this) as Mock)!);
 			}
 
-			var params_ = ctor.GetParameters();
-
-			var mocks = new object[params_.Length];
-			var objects= new object[params_.Length];
-
-			for (int i = 0; i < mocks.Length; i++)
+			foreach (var kvp in _originalClassInstances)
 			{
-				var param = params_[i];
+				//cheap deep copy
+				var json =JsonConvert.SerializeObject(kvp.Value.instance);
+				var clone = JsonConvert.DeserializeObject(json, kvp.Key)!;
 
-				var mockType = typeof(Mock<>).MakeGenericType(param.ParameterType);
-				var mockCtor = mockType.GetConstructor([typeof(MockBehavior)]);
-
-				var mock = mockCtor.Invoke([MockBehavior.Strict]);
-				var obj=mockType.GetProperties().Single(prop => prop.Name == "Object" && prop.DeclaringType.Name == mockType.Name).GetGetMethod().Invoke(mock,null);
-
-				mocks[i] = mock;
-				objects[i] = obj;
-
-				_mocks[param.ParameterType].SetValue(this, mock);
+				_classDependencies[kvp.Key].SetValue(this, clone);
+				_arguments[kvp.Value.argPosition] = clone;
 			}
 
-			var instance = ctor.Invoke(objects);
+			_system = CreateInstance();
+		}
+
+
+		protected T CreateInstance()
+		{
+			var instance = _ctor.Invoke(_arguments);
 
 			return (T)instance;
 		}
-
-
 	}
 }
