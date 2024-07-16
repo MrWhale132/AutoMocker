@@ -25,8 +25,8 @@ namespace UnitTests
 			_calculator.Setup(x => x.Calculate(3, It.IsAny<int>())).ReturnsAsync(100);
 
 			_system.Manage();
+
 			Console.Out.WriteLine(_calculator.Setups.Count);
-			_calculator.VerifyAll();
 		}
 
 		[Test]
@@ -35,7 +35,32 @@ namespace UnitTests
 			Console.Out.WriteLine(_calculator.Setups.Count);
 		}
 
+		[Test]
+		public async Task GenTest()
+		{
+			_calculator.Setup(x => x.Calculate(3, It.IsAny<int>())).ReturnsAsync(100);
+
+			_generic.Setup(x => x.GenTest()).ReturnsAsync(10);
+
+			_generic.Setup(x => x.GenMethodTest<ICache>()).ReturnsAsync(It.IsAny<ICache>());
+
+			await _system.Manage();
+		}
+
 	}
+
+
+	internal class GenericTests : GenericServiceTemplate<int, ICache>
+	{
+		[Test]
+		public async Task Test()
+		{
+			_generic.Setup(x => x.GenTest()).ReturnsAsync(10);
+
+			await _system.GenTest();
+		}
+	}
+
 
 	internal class CacheTests : Base<Cache>
 	{

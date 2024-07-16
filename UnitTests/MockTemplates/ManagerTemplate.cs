@@ -9,6 +9,6 @@ namespace UnitTests.MockTemplates
         protected Config _config;
         protected Mock<ICalculator> _calculator;
         protected Mock<ICache> _cache;
-        //what about generic dependencies?
+        protected Mock<IGeneric<int, ICache>> _generic;
     }
 }

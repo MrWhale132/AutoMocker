@@ -7,19 +7,24 @@ namespace ObjectCreator.Services
 		private readonly ICache _cache;
 		private readonly ICalculator _calculator;
 		private readonly Config _config;
-		private int _count;
+		private readonly IGeneric<int, ICache> _generic;
 
-		public Manager(ICache cache, ICalculator calculator, Config config)
+
+		public Manager(ICache cache, ICalculator calculator, Config config, IGeneric<int, ICache> generic)
 		{
 			_cache = cache;
 			_calculator = calculator;
 			_config = config;
+			_generic = generic;
 		}
 
-		public async void Manage()
+		public async Task Manage()
 		{
 			int result = await _calculator.Calculate(3, 4);
-            Console.Out.WriteLine(result);
+
+			await _generic.GenTest();
+
+			await _generic.GenMethodTest<ICache>();
         }
 	}
 }

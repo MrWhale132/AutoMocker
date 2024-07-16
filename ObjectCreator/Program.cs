@@ -14,7 +14,7 @@ namespace ObjectCreator
 
 			var test = Create<Manager>();
 
-			test.Manage();
+			//test.Manage();
 		}
 
 		static T Create<T>() where T : class

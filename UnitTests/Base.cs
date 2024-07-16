@@ -4,11 +4,11 @@ using System.Reflection;
 
 namespace UnitTests
 {
-	internal class Base<T> where T : class
+	public class Base<T> where T : class
 	{
 		static Dictionary<Type, FieldInfo> _mockFields;
 		static Dictionary<Type, FieldInfo> _classDependencies;
-		static Dictionary<Type, (object instance, int argPosition)> _originalClassInstances;
+		static Dictionary<Type, (object original, int argPosition)> _originalClassInstances;
 
 		ConstructorInfo _ctor;
 		object[] _arguments;
@@ -22,7 +22,7 @@ namespace UnitTests
 
 			_mockFields = new Dictionary<Type, FieldInfo>();
 			_classDependencies = new Dictionary<Type, FieldInfo>();
-			_originalClassInstances = new Dictionary<Type, (object instance, int argPosition)>();
+			_originalClassInstances = new Dictionary<Type, (object original, int argPosition)>();
 
 
 			var fields = GetType().GetFields(BindingFlags.Instance | BindingFlags.NonPublic);
@@ -39,7 +39,7 @@ namespace UnitTests
 
 
 			var type = typeof(T);
-			_ctor = type.GetConstructors().FirstOrDefault();
+			_ctor = type.GetConstructors().FirstOrDefault()!;
 
 			if (_ctor is null)
 			{
@@ -99,7 +99,7 @@ namespace UnitTests
 			foreach (var kvp in _originalClassInstances)
 			{
 				//cheap deep copy
-				var json =JsonConvert.SerializeObject(kvp.Value.instance);
+				var json =JsonConvert.SerializeObject(kvp.Value.original);
 				var clone = JsonConvert.DeserializeObject(json, kvp.Key)!;
 
 				_classDependencies[kvp.Key].SetValue(this, clone);
@@ -107,6 +107,17 @@ namespace UnitTests
 			}
 
 			_system = CreateInstance();
+		}
+
+
+		[TearDown]
+		public virtual void BaseTearDown()
+		{
+			foreach(var field in _mockFields.Values)
+			{
+				var mock = field.GetValue(this)!;
+				mock.GetType().GetMethod(nameof(Mock.VerifyAll))!.Invoke(mock,null);
+			}
 		}
 
 
